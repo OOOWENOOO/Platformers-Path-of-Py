@@ -1,0 +1,677 @@
+import pygame as py
+import sys
+import time
+
+py.init()
+py.mixer.init()
+
+# Load sounds and music
+jump_sound = py.mixer.Sound('jump_sound.mp3')
+hit_spike = py.mixer.Sound('hit_spike_sound.mp3') # Explosion sound
+hit_spike_2 = py.mixer.Sound('hit_spike_sound_2.mp3') # Person screaming sound
+reached_checkpoint = py.mixer.Sound('checkpoint_reached_sound.mp3') # Ding sound
+level_complete_sound = py.mixer.Sound('level_complete.mp3')
+sound_click = py.mixer.Sound('1.wav')
+py.mixer.music.load('1.mp3')
+
+# Fullscreen window size
+info = py.display.Info()
+WIDTH, HEIGHT = info.current_w, info.current_h
+screen = py.display.set_mode((WIDTH, HEIGHT), py.FULLSCREEN)
+py.display.set_caption("Platformer")
+
+clock = py.time.Clock()
+
+# Fonts
+font_timer = py.font.SysFont('Helvetica', 72)
+font_btn = py.font.SysFont('Arial', 36, bold=True)
+
+# Colors
+COLOR_BG = (30, 30, 30)
+COLOR_BTN = (100, 100, 100)
+COLOR_BTN_HOVER = (200, 200, 50)
+COLOR_TEXT = (255, 255, 255)
+COLOR_TEXT_BTN = (0, 0, 0)
+
+# UI States
+STATE_MENU = 'menu'
+STATE_PLAYING = 'playing'
+STATE_PAUSED = 'paused'
+STATE_LEVEL_COMPLETE = 'level_complete'
+
+# Global timer variables
+start_time = 0
+elapsed_time = 0
+running_timer = False
+state = STATE_MENU
+last_checkpoint = None
+
+explosions = py.sprite.Group()
+
+levels_data = [
+    {
+        "player_start": (25, HEIGHT - 90),
+        "platforms": [
+            (300, 500, 200, 20),
+            (600, 400, 200, 20),
+            (900, 300, 200, 20),
+            (1200, 600, 200, 20),
+            (100, 700, 300, 20),
+            (400, 700, 100, 20),
+         
+            (0, HEIGHT - 40, WIDTH, 40),  # Floor
+            (0, 0, 20, HEIGHT),           # Left wall
+            (WIDTH - 40, 0, 40, HEIGHT)   # Right wall
+        ],
+        "checkpoints": [
+            (25, 930),
+            (400, 500),
+            (1400, 600),
+            (1700, HEIGHT - 40)  # final checkpoint
+        ],
+        "spikes": [
+            (100, HEIGHT - 60, 1920, 20),
+        ]
+    },
+    {
+        # Second level data
+        "player_start": (50, HEIGHT - 90),
+        "platforms": [
+            (150, 550, 250, 20),
+            (500, 450, 150, 20),
+            (800, 350, 200, 20),
+            (1100, 250, 300, 20),
+            (1500, 650, 200, 20),
+            (600, 800, 200, 20),
+            (0, HEIGHT - 40, WIDTH, 40),  # Floor
+            (0, 0, 20, HEIGHT),           # Left wall
+            (WIDTH - 40, 0, 40, HEIGHT)   # Right wall
+        ],
+        "checkpoints": [
+            (25, HEIGHT - 90),
+            (200, 550),
+            (1100, 250),
+            (1600, HEIGHT - 40)
+        ],
+        "spikes": [
+            (400, HEIGHT - 60, 300, 20),
+            (900, HEIGHT - 60, 1920, 20)
+        ]
+    },
+    {
+    # Third
+        "player_start": (50, HEIGHT - 90),
+        "platforms": [
+            (901, 1000, 600, 50),
+            (0, 800, 1350, 20),
+            (1500, 100, 20, 1000),
+            (700, 700, 200, 20),
+            (100, 600, 500, 20),
+            (100, 400, 200, 20),
+            (700, 300, 100, 20),
+            (1300, 100, 200, 20),
+            (1090, 250, 20, 20),
+            (1500, 100, 100, 20),
+            (1700, 100, 300, 20),
+            (1500, 500, 300, 20),
+            (1700, 900, 300, 20),
+            (600, 1000, 50, 20),
+            (0, HEIGHT - 40, WIDTH, 40),  # Floor
+            (0, 0, 20, HEIGHT),           # Left wall
+            (WIDTH - 40, 0, 40, HEIGHT)   # Right wall
+        ],
+        "checkpoints": [
+            (25, HEIGHT - 90),
+            (1100, 250),
+            (1600, HEIGHT - 40)
+        ],
+        "spikes": [
+            (400, HEIGHT - 60, 300, 20),
+            (900, HEIGHT - 60, 1920, 20)
+        ]
+    },
+    {
+        "player_start":(50, HEIGHT - 90),
+        "platforms": [
+            (100, 500, 600, 20),
+            (60, 700, 200, 20),
+            (700, 350, 200, 20),
+            (1200, 280, 200, 20),
+            (0, HEIGHT - 40, WIDTH, 40),  # Floor
+            (0, 0, 20, HEIGHT),           # Left wall
+            (WIDTH - 40, 0, 40, HEIGHT)   # Right wall
+        ],
+        "checkpoints": [
+            (1700, HEIGHT - 60)
+        ],
+        "spikes": [
+            (400, HEIGHT - 60, 300, 20),
+            (900, HEIGHT - 60, 1920, 20)
+        ]
+    },
+    {
+        "player_start":(50, HEIGHT - 90),
+        "platforms": [
+            (0, 850, 150, 20),
+            (100, 650, 150, 20),
+            (0, 450, 150, 20),
+            (100, 250, 150, 20),
+            (500, 150, 150, 20),
+            (1020, 400, 150, 20),
+            (0, HEIGHT - 40, WIDTH, 40),  # Floor
+            (0, 0, 20, HEIGHT),           # Left wall
+            (WIDTH - 40, 0, 40, HEIGHT)   # Right wall
+        ],
+        "checkpoints": [
+            (25, HEIGHT - 90),
+            (1700, HEIGHT - 60)
+        ],
+        "spikes": [
+            (400, HEIGHT - 60, 300, 20),
+            (900, HEIGHT - 60, 1920, 20)
+        ]
+    }
+    
+]
+
+current_level = 0
+MAX_LEVELS = len(levels_data)
+
+# --- Button class ---
+class Button:
+    def __init__(self, rect, text, callback, base_color=COLOR_BTN, hover_color=COLOR_BTN_HOVER, font=font_btn):
+        self.rect = py.Rect(rect)
+        self.text = text
+        self.callback = callback
+        self.base_color = base_color
+        self.hover_color = hover_color
+        self.font = font
+        self.hovered = False
+        self.render_text()
+
+    def render_text(self):
+        self.text_surf = self.font.render(self.text, True, COLOR_TEXT_BTN)
+        self.text_rect = self.text_surf.get_rect(center=self.rect.center)
+
+    def draw(self, surface):
+        color = self.hover_color if self.hovered else self.base_color
+        py.draw.rect(surface, color, self.rect, border_radius=8)
+        surface.blit(self.text_surf, self.text_rect)
+
+    def check_hover(self, mouse_pos):
+        self.hovered = self.rect.collidepoint(mouse_pos)
+
+    def click(self):
+        sound_click.play()
+        self.callback()
+
+# --- Game Objects ---
+class Player(py.sprite.Sprite):
+    def __init__(self):
+        super().__init__()
+        self.jumping = False
+        self.jump_timer = 0
+        self.max_jump_time = 27
+        self.image = py.Surface((50, 50))
+        self.image.fill((7, 240, 8))
+        self.rect = self.image.get_rect()
+        self.rect.bottomleft = (50, HEIGHT - 40)
+        self.velocity = py.math.Vector2(0, 0)
+
+    def update(self, keys, platforms):
+        if keys[py.K_LEFT] or keys[py.K_a]:
+            self.velocity.x = -5
+        elif keys[py.K_RIGHT] or keys[py.K_d]:
+            self.velocity.x = 5
+        else:
+            self.velocity.x = 0
+
+        self.rect.x += self.velocity.x
+        for platform in platforms:
+            if self.rect.colliderect(platform.rect):
+                if self.velocity.x > 0:
+                    self.rect.right = platform.rect.left
+                elif self.velocity.x < 0:
+                    self.rect.left = platform.rect.right
+
+        if keys[py.K_UP] or keys[py.K_SPACE] or keys[py.K_w]:
+            if self.on_ground(platforms) and not self.jumping:
+                jump_sound.play()
+                self.jumping = True
+                self.jump_timer = 0
+                self.velocity.y = -10
+            if self.jumping and self.jump_timer < self.max_jump_time:
+                self.velocity.y -= 0.5
+                self.jump_timer += 1
+        else:
+            self.jumping = False
+            self.jump_timer = self.max_jump_time
+
+        self.velocity.y += 0.5  # gravity
+        self.rect.y += self.velocity.y
+
+        for platform in platforms:
+            if self.rect.colliderect(platform.rect):
+                if self.velocity.y > 0:
+                    self.rect.bottom = platform.rect.top
+                    self.velocity.y = 0
+                elif self.velocity.y < 0:
+                    self.rect.top = platform.rect.bottom
+                    self.velocity.y = 0
+
+    def on_ground(self, platforms):
+        self.rect.y += 1
+        touching = any(self.rect.colliderect(p.rect) for p in platforms)
+        self.rect.y -= 1
+        return touching
+
+class Platform(py.sprite.Sprite):
+    def __init__(self, x, y, width, height):
+        super().__init__()
+        self.image = py.Surface((width, height))
+        self.image.fill((0, 0, 0))
+        self.rect = self.image.get_rect(topleft=(x, y))
+
+class Checkpoint(py.sprite.Sprite):
+    def __init__(self, x, y):
+        super().__init__()
+        self.image = py.Surface((30, 60))
+        self.image.fill((255, 255, 0))
+        self.rect = self.image.get_rect()
+        self.rect.midbottom = (x, y)
+
+class Spike(py.sprite.Sprite):
+    def __init__(self, x, y, width=1520, height=20):
+        super().__init__()
+        self.image = py.Surface((width, height))
+        self.image.fill((255, 0, 0))
+        self.rect = self.image.get_rect(topleft=(x, y))
+
+class Explosion(py.sprite.Sprite):
+    def __init__(self, center):
+        super().__init__()
+        self.frames = []
+        for radius in range(10, 60, 10):
+            image = py.Surface((radius * 2, radius * 2), py.SRCALPHA)
+            py.draw.circle(image, (255, 100, 0, 200), (radius, radius), radius)
+            self.frames.append(image)
+        self.current_frame = 0
+        self.image = self.frames[self.current_frame]
+        self.rect = self.image.get_rect(center=center)
+        self.frame_delay = 5  # frames to wait before advancing
+        self.frame_timer = 0
+
+    def update(self):
+        self.frame_timer += 1
+        if self.frame_timer >= self.frame_delay:
+            self.frame_timer = 0
+            self.current_frame += 1
+            if self.current_frame < len(self.frames):
+                self.image = self.frames[self.current_frame]
+                self.rect = self.image.get_rect(center=self.rect.center)
+            else:
+                self.kill()
+
+def load_level(level_index):
+    global platforms, spikes, checkpoints, final_checkpoint, current_checkpoint, last_checkpoint, all_sprites
+
+    level = levels_data[level_index]
+
+    # Clear groups
+    platforms.empty()
+    spikes.empty()
+    checkpoints.empty()
+    all_sprites.empty()
+
+    # Create player at start
+    player.rect.bottomleft = level["player_start"]
+    player.velocity = py.math.Vector2(0, 0)
+    all_sprites.add(player)
+
+    # Platforms
+    for x, y, w, h in level["platforms"]:
+        platforms.add(Platform(x, y, w, h))
+
+    # Checkpoints
+    for i, (x, y) in enumerate(level["checkpoints"]):
+        cp = Checkpoint(x, y)
+        checkpoints.add(cp)
+        if i == len(level["checkpoints"]) - 1:
+            final_checkpoint = cp
+            final_checkpoint.image.fill((0, 255, 255))
+
+    # Spikes
+    for x, y, w, h in level.get("spikes", []):
+        spikes.add(Spike(x, y, w, h))
+
+    # Reset checkpoint variables
+    current_checkpoint = player.rect.bottomleft
+    last_checkpoint = None
+
+def next_level():
+    global current_level, state, running_timer, start_time, elapsed_time
+    current_level += 1
+    if current_level >= MAX_LEVELS:
+        current_level = 0  # Loop back or handle game completion
+    load_level(current_level)
+    elapsed_time = 0
+    running_timer = True
+    start_time = time.time()
+    state = STATE_PLAYING
+    py.mixer.music.play(-1)
+    create_play_ui()
+
+def create_level_complete_ui():
+    global buttons
+    py.mixer.music.stop()
+    level_complete_sound.play()
+
+    buttons.clear()
+    btn_width, btn_height = 250, 70
+    margin = 20
+    x_center = WIDTH // 2
+    y_start = HEIGHT // 2 - 100
+
+    buttons.extend([
+        Button(
+            (x_center - btn_width // 2, y_start, btn_width, btn_height),
+            "Next Level",
+            next_level,
+            (50, 150, 50),
+            (100, 200, 100)
+        ),
+        Button(
+            (x_center - btn_width // 2, y_start + btn_height + margin, btn_width, btn_height),
+            "Restart",
+            restart_game
+        ),
+        Button(
+            (x_center - btn_width // 2, y_start + 2 * (btn_height + margin), btn_width, btn_height),
+            "Menu",
+            create_menu_ui
+        )
+    ])
+
+# ----- NEW: Level Selection Helpers -----
+def select_level(level_index):
+    
+    global current_level, state, running_timer, start_time, elapsed_time
+    current_level = level_index
+    load_level(current_level)
+    elapsed_time = 0
+    running_timer = True
+    start_time = time.time()
+    state = STATE_PLAYING
+    py.mixer.music.play(-1)
+    create_play_ui()
+
+def create_levels_ui():
+    
+    global buttons
+    py.mixer.music.stop()
+    buttons.clear()
+
+    btn_width, btn_height = 200, 60
+    margin = 20
+    x_center = WIDTH // 2
+    y_start = HEIGHT // 4
+
+    for i in range(MAX_LEVELS):
+        y_pos = y_start + i * (btn_height + margin)
+        buttons.append(
+            Button(
+                (x_center - btn_width // 2, y_pos, btn_width, btn_height),
+                f"Level {i + 1}",
+                lambda i=i: select_level(i)
+            )
+        )
+
+    # Back button at the bottom
+    back_y = y_start + MAX_LEVELS * (btn_height + margin)
+    buttons.append(
+        Button(
+            (x_center - btn_width // 2, back_y, btn_width, btn_height),
+            "Back",
+            create_menu_ui
+        )
+    )
+# ---------------------------------------
+
+# Initialize game objects
+player = Player()
+player.rect.bottomleft = (25, HEIGHT - 40)
+all_sprites = py.sprite.Group(player)
+
+current_checkpoint = (25, HEIGHT - player.rect.height - 40)
+
+platforms = py.sprite.Group(
+    Platform(300, 500, 200, 20),
+    Platform(600, 400, 200, 20),
+    Platform(900, 300, 200, 20),
+    Platform(1200, 600, 200, 20),
+    Platform(100, 700, 300, 20),
+    Platform(0, HEIGHT - 40, WIDTH, 40),  # Floor
+    Platform(0, 0, 20, HEIGHT),  # Left wall
+    Platform(WIDTH - 20, 0, 20, HEIGHT)  # Right wall
+)
+
+final_checkpoint = Checkpoint(1700, HEIGHT - 40)
+checkpoints = py.sprite.Group(
+    Checkpoint(400, 500),
+    Checkpoint(1400, 600),
+    final_checkpoint
+)
+final_checkpoint.image.fill((0, 255, 255))
+
+spikes = py.sprite.Group(
+    Spike(100, HEIGHT - 60)  # Position spike at bottom (floor)
+)
+
+# UI button container
+buttons = []
+
+# --- UI Logic ---
+def format_time(seconds):
+    mins = int(seconds // 60)
+    secs = int(seconds % 60)
+    millis = int((seconds - int(seconds)) * 1000)
+    return f"{mins:02}:{secs:02}:{millis:03}"
+
+def start_game():
+    global state, running_timer, start_time
+    if state != STATE_PLAYING:
+        state = STATE_PLAYING
+        if not running_timer:
+            start_time = time.time() - elapsed_time
+            running_timer = True
+        py.mixer.music.play(-1)
+        create_play_ui()
+
+def pause_game():
+    global state, running_timer
+    if state == STATE_PLAYING:
+        running_timer = False
+        state = STATE_PAUSED
+        py.mixer.music.stop()
+        create_pause_ui()
+    elif state == STATE_PAUSED:
+        start_game()
+
+def restart_game():
+    global elapsed_time, running_timer, start_time, state, current_checkpoint
+    elapsed_time = 0
+    running_timer = False
+    state = STATE_MENU
+    current_checkpoint = (25, HEIGHT - player.rect.height - 40)
+    py.mixer.music.stop()
+    create_menu_ui()
+    player.rect.bottomleft = current_checkpoint
+    player.velocity = py.math.Vector2(0, 0)
+
+def leave_game():
+    py.quit()
+    sys.exit()
+
+def restart_elapsed_time():
+    global elapsed_time
+    elapsed_time = 0
+
+def create_menu_ui():
+    global buttons, elapsed_time, running_timer, state, current_checkpoint, last_checkpoint
+    running_timer = False
+    state = STATE_MENU
+    current_checkpoint = (25, HEIGHT - player.rect.height - 40)
+    last_checkpoint = None
+    player.rect.bottomleft = current_checkpoint
+    player.velocity = py.math.Vector2(0, 0)
+    py.mixer.music.stop()
+    buttons.clear()
+
+    margin = 20
+    btn_width = 200
+    btn_height = 60
+    x_center = WIDTH // 2
+
+    buttons.extend([
+        Button(
+            (x_center - btn_width // 2, HEIGHT // 3, btn_width, btn_height),
+            "Play",
+            start_game,
+            (50, 150, 50),
+            (100, 200, 100)
+        ),
+        Button(
+            (x_center - btn_width // 2, HEIGHT // 3 + btn_height + margin, btn_width, btn_height),
+            "Levels",
+            create_levels_ui
+        ),
+        Button(
+            (x_center - btn_width // 2, HEIGHT // 3 + 2 * (btn_height + margin), btn_width, btn_height),
+            "Leave",
+            leave_game,
+            (150, 50, 50),
+            (200, 100, 100)
+        )
+    ])
+
+def create_play_ui():
+    global buttons
+    buttons.clear()
+    buttons.append(Button((WIDTH - 160, 20, 140, 50), "Pause", pause_game))
+
+def create_pause_ui():
+    global buttons
+    buttons.clear()
+    margin = 20
+    btn_width = 250
+    btn_height = 70
+    x_center = WIDTH // 2
+    y_start = HEIGHT // 3
+
+    buttons.extend([
+        Button(
+            (x_center - btn_width // 2, y_start, btn_width, btn_height),
+            "Restart",
+            restart_game,
+            (180, 50, 50),
+            (220, 100, 100)
+        ),
+        Button(
+            (x_center - btn_width // 2, y_start + btn_height + margin, btn_width, btn_height),
+            "Continue",
+            start_game,
+            (50, 150, 50),
+            (100, 200, 100)
+        ),
+        Button(
+            (x_center - btn_width // 2, y_start + 2 * (btn_height + margin), btn_width, btn_height),
+            "Menu",
+            create_menu_ui
+        )
+    ])
+
+create_menu_ui()
+
+# --- Game Loop ---
+while True:
+    mouse_pos = py.mouse.get_pos()
+    for event in py.event.get():
+        if event.type == py.QUIT:
+            leave_game()
+        elif event.type == py.MOUSEBUTTONDOWN and event.button == 1:
+            for btn in buttons:
+                if btn.hovered:
+                    btn.click()
+        elif event.type == py.KEYDOWN:
+            if event.key == py.K_RETURN:
+                if state in (STATE_MENU, STATE_PAUSED):
+                    sound_click.play()
+                    start_game()
+            elif event.key == py.K_r:
+                sound_click.play()
+                restart_game()
+            elif event.key == py.K_m:
+                sound_click.play()
+                create_menu_ui()
+            elif event.key == py.K_l:
+                sound_click.play()
+                leave_game()
+            elif event.key == py.K_p:
+                sound_click.play()
+                pause_game()
+
+    for btn in buttons:
+        btn.check_hover(mouse_pos)
+
+    if running_timer:
+        elapsed_time = time.time() - start_time
+
+    screen.fill(COLOR_BG)
+
+    timer_text = font_timer.render(format_time(elapsed_time), True, COLOR_TEXT)
+    screen.blit(timer_text, timer_text.get_rect(center=(WIDTH // 2, 100)))
+
+    for btn in buttons:
+        btn.draw(screen)
+
+    if state == STATE_PLAYING:
+        keys = py.key.get_pressed()
+        player.update(keys, platforms)
+
+        # Check spike collisions
+        for spike in spikes:
+            if player.rect.colliderect(spike.rect):
+                hit_spike.play()
+                hit_spike_2.play()
+                explosions.add(Explosion(player.rect.center))
+                player.rect.center = current_checkpoint
+                player.velocity = py.math.Vector2(0, 0)
+
+        all_sprites.draw(screen)
+        platforms.draw(screen)
+        checkpoints.draw(screen)
+        spikes.draw(screen)
+
+        # Check for checkpoint collision
+        for checkpoint in checkpoints:
+            if player.rect.colliderect(checkpoint.rect) and checkpoint != last_checkpoint:
+                current_checkpoint = checkpoint.rect.center
+                last_checkpoint = checkpoint
+                reached_checkpoint.play()
+
+        # End-level condition: reaching final checkpoint
+        if player.rect.colliderect(final_checkpoint.rect):
+            state = STATE_LEVEL_COMPLETE
+            create_level_complete_ui()
+            py.mixer.music.stop()
+            running_timer = False
+
+    if state == STATE_LEVEL_COMPLETE:
+        complete_text = font_timer.render("Level Complete!", True, COLOR_TEXT)
+        screen.blit(complete_text, complete_text.get_rect(center=(WIDTH // 2, HEIGHT // 4)))
+
+    explosions.update()
+    explosions.draw(screen)
+
+    py.display.flip()
+    clock.tick(60)
